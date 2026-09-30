@@ -42,6 +42,17 @@ function setup() {
   if (u.getLastRow() < 2) u.appendRow([Session.getEffectiveUser().getEmail(), 'Superadmin', 'superadmin']);
 }
 
+/** Jalankan bila muncul "Email ... belum terdaftar": memperbaiki header sheet Users
+ *  dan mendaftarkan email di bawah sebagai superadmin. Ganti EMAIL/NAMA sesuai akun Anda. */
+function perbaikiUsers() {
+  const EMAIL = 'vanrey441@gmail.com', NAMA = 'Van';
+  const s = sh('Users');
+  s.getRange(1, 1, 1, 3).setValues([T.Users]);
+  if (s.getMaxColumns() > 3) s.getRange(1, 4, s.getMaxRows(), s.getMaxColumns() - 3).clearContent();
+  put('Users', { email: EMAIL.toLowerCase(), name: NAMA, role: 'superadmin' });
+  Logger.log('OK: ' + EMAIL + ' terdaftar sebagai superadmin');
+}
+
 function sh(n) {
   const ss = SpreadsheetApp.getActive();
   let s = ss.getSheetByName(n);
