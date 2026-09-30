@@ -82,14 +82,15 @@ function buf(p,w){if(p.length<2)return[];const k=Math.cos(p[0][0]*R2),d=w/(R2*63
   p.forEach((c,i)=>{const a=p[Math.max(0,i-1)],b=p[Math.min(p.length-1,i+1)];let dx=(b[1]-a[1])*k,dy=b[0]-a[0];const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;A.push([c[0]+dx*d,c[1]-dy*d/k]);B.push([c[0]-dx*d,c[1]+dy*d/k])});return A.concat(B.reverse())}
 function detect(fid){if(!S.pos)return null;let b=null,bd=1e9;S.areas.filter(a=>a.floorId==fid).forEach(a=>{const d=dPath(S.pos.ll,pts(a));if(d<bd){bd=d;b=a}});return b&&bd<=thr()?b:null}
 function watch(){if(S.w||!navigator.geolocation)return;S.w=navigator.geolocation.watchPosition(p=>{
-  const n=[p.coords.latitude,p.coords.longitude],a=p.coords.accuracy,o=S.pos;let ll=n;
-  if(o&&dm(o.ll,n)<3*Math.max(a,10)){const k=a<=10?.85:a<=25?.55:.35;ll=[o.ll[0]+(n[0]-o.ll[0])*k,o.ll[1]+(n[1]-o.ll[1])*k]}
-  S.pos={ll,acc:a};onPos()},e=>toast('GPS: '+(e.code==1?'izin lokasi ditolak — aktifkan di browser':'sinyal tidak tersedia'),4000),{enableHighAccuracy:true,maximumAge:0,timeout:30000})}
+  const n=[p.coords.latitude,p.coords.longitude],a=p.coords.accuracy,o=S.pos;let sm=n;
+  if(o&&dm(o.sm,n)<3*Math.max(a,10)){const k=a<=10?.85:a<=25?.55:.35;sm=[o.sm[0]+(n[0]-o.sm[0])*k,o.sm[1]+(n[1]-o.sm[1])*k]}
+  S.pos={ll:n,sm,acc:a,t:Date.now()};onPos()},e=>toast('GPS: '+(e.code==1?'izin lokasi ditolak — aktifkan di browser':'sinyal tidak tersedia'),4000),{enableHighAccuracy:true,maximumAge:0,timeout:30000})}
 function gpsUI(){const e=$('#gps');if(!e)return;if(!S.pos){e.style.display='block';e.className='y';e.textContent='📡 Mencari GPS…';return}
-  const a=S.pos.acc,q=a<=10?['g','Bagus']:a<=25?['y','Cukup']:['r','Lemah'];e.style.display='block';e.className=q[0];e.textContent=`📍 ±${Math.round(a)} m · ${q[1]} · ${S.follow?'Mengikuti':'Ikuti'}`}
-function toggleFollow(){S.follow=!S.follow;if(S.follow&&S.map&&S.pos)S.map.panTo(S.pos.ll);gpsUI()}
+  const a=S.pos.acc,age=Math.round((Date.now()-S.pos.t)/1000),q=age>5?['r','Sinyal lambat']:a<=10?['g','Bagus']:a<=25?['y','Cukup']:['r','Lemah'];
+  e.style.display='block';e.className=q[0];e.textContent=`📍 ±${Math.round(a)} m · ${q[1]} · update ${age}s lalu · ${S.follow?'Mengikuti':'Ikuti'}`}
+function toggleFollow(){S.follow=!S.follow;if(S.follow&&S.map&&S.pos)S.map.setView(S.pos.ll,S.map.getZoom(),{animate:false});gpsUI()}
 function onPos(){liveDot();gpsUI();const m=S.m;
-  if(m.st=='rec'&&S.pos.acc<=25){const l=m.pts[m.pts.length-1];if(!l||dm(l,S.pos.ll)>=Math.max(4,S.pos.acc*.5)){m.pts.push(S.pos.ll)}mDraw()}
+  if(m.st=='rec'&&S.pos.acc<=25){const l=m.pts[m.pts.length-1];if(!l||dm(l,S.pos.sm)>=Math.max(4,S.pos.acc*.5)){m.pts.push(S.pos.sm)}mDraw()}
   gStat();nearUI();checkNear()}
 function checkNear(){if(!S.pos)return;S.findings.forEach(x=>{if(x.status!='open'||S.nt[x.id]||Math.abs(+x.x)<=1)return;const a=ar(x.areaId);
   if(dm(S.pos.ll,[+x.x,+x.y])<=20||(a&&dPath(S.pos.ll,pts(a))<=Math.min(thr(),25))){S.nt[x.id]=1;navigator.vibrate&&navigator.vibrate([250,100,250]);toast(`📍 Anda di lokasi temuan ${x.id} · ${(fl(x.floorId)||{}).name||''} · ${(a||{}).name||''}`,7000)}})}
@@ -101,7 +102,7 @@ function mk(id,c){killMap();const m=L.map(id).setView(c||(S.pos&&S.pos.ll)||[-6.
   o.addTo(m);L.control.layers({Peta:o,Satelit:s}).addTo(m);S.follow=(id=='mm'||id=='gm');m.on('dragstart',()=>{S.follow=false;gpsUI()});S.map=m;gpsUI();liveDot();return m}
 function liveDot(){if(!S.map||!S.pos)return;const ll=S.pos.ll;
   if(S.lm){S.lm.setLatLng(ll);S.lc.setLatLng(ll).setRadius(S.pos.acc)}else{S.lc=L.circle(ll,{radius:S.pos.acc,color:'#2563eb',weight:1,fillColor:'#3b82f6',fillOpacity:.12}).addTo(S.map);S.lm=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(S.map)}
-  if(S.follow)S.map.panTo(ll,{animate:true,duration:.6,noMoveStart:true})}
+  if(S.follow)S.map.setView(ll,S.map.getZoom(),{animate:false})}
 function drawArea(g,a,o={}){const p=pts(a);if(!p.length)return;const c=o.red?'#dc2626':(a.color||'#0ea5a4');
   if(p.length>1)L.polygon(buf(p,o.red?12:8),{color:c,weight:o.red?3:1,fillColor:c,fillOpacity:o.red?.45:o.dim?.1:.3,dashArray:o.red?'6 6':null}).addTo(g);
   L.polyline(p,{color:c,weight:3,opacity:o.dim?.35:.95}).bindTooltip(E(a.name),{permanent:!o.dim,direction:'center',className:'lt'}).addTo(g)}
@@ -193,8 +194,8 @@ function mDraw(){if(!S.map)return;if(S.dl)S.dl.remove();const p=S.m.pts,g=L.laye
   if(p.length)L.polyline(p,{color:S.m.color,weight:5,dashArray:'8 8'}).addTo(g);
   p.forEach((q,i)=>L.circleMarker(q,{radius:i==0||i==p.length-1?9:4,color:'#0f172a',weight:2,fillColor:i==0?'#16a34a':i==p.length-1?'#dc2626':'#fff',fillOpacity:1}).addTo(g));
   g.addTo(S.map);S.dl=g;const e=$('#pc');if(e)e.textContent=p.length+' titik'+(S.pos?` · akurasi GPS ±${Math.round(S.pos.acc)} m`:' · menunggu GPS…')+(S.m.st=='rec'?' · merekam…':'')}
-function mStart(){if(!S.pos)return toast('Menunggu sinyal GPS… izinkan akses lokasi.');if(S.pos.acc>30&&!confirm('Akurasi GPS masih ±'+Math.round(S.pos.acc)+' m. Tunggu sampai ≤ 25 m agar jalur rapi. Tetap mulai sekarang?'))return;S.m.st='rec';S.m.pts=[S.pos.ll];render()}
-function mStop(){if(S.pos)S.m.pts.push(S.pos.ll);if(S.m.pts.length<2){S.m.st='idle';render();return toast('Jalur terlalu pendek, ulangi.')}S.m.st='done';render()}
+function mStart(){if(!S.pos)return toast('Menunggu sinyal GPS… izinkan akses lokasi.');if(S.pos.acc>30&&!confirm('Akurasi GPS masih ±'+Math.round(S.pos.acc)+' m. Tunggu sampai ≤ 25 m agar jalur rapi. Tetap mulai sekarang?'))return;S.m.st='rec';S.m.pts=[S.pos.sm];render()}
+function mStop(){if(S.pos)S.m.pts.push(S.pos.sm);if(S.m.pts.length<2){S.m.st='idle';render();return toast('Jalur terlalu pendek, ulangi.')}S.m.st='done';render()}
 function editArea(id){const a=ar(id);S.m={floorId:a.floorId,id:a.id,name:a.name,items:a.items,color:a.color,pts:pts(a),st:'done'};render();scrollTo(0,0)}
 function saveArea(){const m=S.m;if(!m.name||m.pts.length<2)return toast('Isi nama area dan rekam jalurnya');
   const a={id:m.id||rid(),floorId:m.floorId,name:m.name,points:JSON.stringify(m.pts),items:m.items||'',color:m.color},i=S.areas.findIndex(z=>z.id==a.id);
@@ -214,5 +215,5 @@ function login(msg){$('#nav').innerHTML='';$('#who').textContent='';$('#hr').inn
 function start(){if(/XXXX/.test(CFG.API_URL)||/ISI_CLIENT/.test(CFG.GOOGLE_CLIENT_ID))return login('config.js belum diisi (API_URL / GOOGLE_CLIENT_ID)');
   if(!sessionStorage.getItem(TK))return login();let c=null;try{c=JSON.parse(localStorage.getItem('bc'+TK))}catch(e){}
   if(c&&c.me){apply(c);load().catch(e=>toast(e.message))}else run(load)}
-start();
+start();setInterval(gpsUI,1000);
 </script></body></html>
