@@ -34,14 +34,14 @@ nav div.on{color:var(--p);font-weight:700}nav span{display:block;font-size:20px}
 #modal{position:fixed;inset:0;background:#0007;z-index:9;display:none;align-items:flex-end;justify-content:center}
 #modal>div{background:var(--bg);width:100%;max-width:820px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:14px}
 #busy{position:fixed;inset:0;background:#fff8;z-index:20;display:none;align-items:center;justify-content:center;font-weight:700;color:var(--p)}
-#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:99px;z-index:30;display:none}
+#toast{position:fixed;left:50%;bottom:130px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:99px;z-index:30;display:none}
 .photo{width:100%;border-radius:12px;max-height:280px;object-fit:cover}
 .tag{display:inline-block;background:#ecfeff;color:#0e7490;border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
 .lmap{height:340px;border-radius:12px;border:1px solid var(--b);z-index:0}
 .ok{background:#dcfce7!important;color:#166534}
 .lt{background:#fff;border:0;box-shadow:0 1px 3px #0004;font-weight:700;font-size:11px;padding:1px 6px}
 .leaflet-container{font:inherit}
-#gps{position:fixed;top:62px;right:10px;z-index:7;background:#fff;border-radius:99px;padding:6px 12px;font-size:12px;font-weight:700;box-shadow:0 2px 8px #0003;cursor:pointer;display:none}
+#gps{position:fixed;bottom:84px;left:10px;max-width:calc(100% - 20px);z-index:7;background:#fff;border-radius:99px;padding:6px 12px;font-size:12px;font-weight:700;box-shadow:0 2px 8px #0003;cursor:pointer;display:none}
 #gps.g{color:#166534}#gps.y{color:#a16207}#gps.r{color:#b91c1c}
 </style><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script></head><body>
 <header><div><b>Genba 5R Map</b><small id="who"></small></div><div id="hr"></div></header>
@@ -85,7 +85,7 @@ function watch(){if(S.w||!navigator.geolocation)return;S.w=navigator.geolocation
   const n=[p.coords.latitude,p.coords.longitude],a=p.coords.accuracy,o=S.pos;let sm=n;
   if(o&&dm(o.sm,n)<3*Math.max(a,10)){const k=a<=10?.85:a<=25?.55:.35;sm=[o.sm[0]+(n[0]-o.sm[0])*k,o.sm[1]+(n[1]-o.sm[1])*k]}
   S.pos={ll:n,sm,acc:a,t:Date.now()};onPos()},e=>toast('GPS: '+(e.code==1?'izin lokasi ditolak — aktifkan di browser':'sinyal tidak tersedia'),4000),{enableHighAccuracy:true,maximumAge:0,timeout:30000})}
-function gpsUI(){const e=$('#gps');if(!e)return;if(!S.pos){e.style.display='block';e.className='y';e.textContent='📡 Mencari GPS…';return}
+function gpsUI(){pcTxt();const e=$('#gps');if(!e)return;if(!S.pos){e.style.display='block';e.className='y';e.textContent='📡 Mencari GPS…';return}
   const a=S.pos.acc,age=Math.round((Date.now()-S.pos.t)/1000),q=age>5?['r','Sinyal lambat']:a<=10?['g','Bagus']:a<=25?['y','Cukup']:['r','Lemah'];
   e.style.display='block';e.className=q[0];e.textContent=`📍 ±${Math.round(a)} m · ${q[1]} · update ${age}s lalu · ${S.follow?'Mengikuti':'Ikuti'}`}
 function toggleFollow(){S.follow=!S.follow;if(S.follow&&S.map&&S.pos)S.map.setView(S.pos.ll,S.map.getZoom(),{animate:false});gpsUI()}
@@ -193,7 +193,8 @@ function mBind(){if(!S.m.floorId||!$('#mm'))return;watch();const p=S.m.pts,m=mk(
 function mDraw(){if(!S.map)return;if(S.dl)S.dl.remove();const p=S.m.pts,g=L.layerGroup();
   if(p.length)L.polyline(p,{color:S.m.color,weight:5,dashArray:'8 8'}).addTo(g);
   p.forEach((q,i)=>L.circleMarker(q,{radius:i==0||i==p.length-1?9:4,color:'#0f172a',weight:2,fillColor:i==0?'#16a34a':i==p.length-1?'#dc2626':'#fff',fillOpacity:1}).addTo(g));
-  g.addTo(S.map);S.dl=g;const e=$('#pc');if(e)e.textContent=p.length+' titik'+(S.pos?` · akurasi GPS ±${Math.round(S.pos.acc)} m`:' · menunggu GPS…')+(S.m.st=='rec'?' · merekam…':'')}
+  g.addTo(S.map);S.dl=g;pcTxt()}
+function pcTxt(){const e=$('#pc');if(!e)return;e.textContent=S.m.pts.length+' titik'+(S.pos?` · akurasi GPS ±${Math.round(S.pos.acc)} m`:' · menunggu GPS…')+(S.m.st=='rec'?' · merekam…':'')}
 function mStart(){if(!S.pos)return toast('Menunggu sinyal GPS… izinkan akses lokasi.');if(S.pos.acc>30&&!confirm('Akurasi GPS masih ±'+Math.round(S.pos.acc)+' m. Tunggu sampai ≤ 25 m agar jalur rapi. Tetap mulai sekarang?'))return;S.m.st='rec';S.m.pts=[S.pos.sm];render()}
 function mStop(){if(S.pos)S.m.pts.push(S.pos.sm);if(S.m.pts.length<2){S.m.st='idle';render();return toast('Jalur terlalu pendek, ulangi.')}S.m.st='done';render()}
 function editArea(id){const a=ar(id);S.m={floorId:a.floorId,id:a.id,name:a.name,items:a.items,color:a.color,pts:pts(a),st:'done'};render();scrollTo(0,0)}
