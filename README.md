@@ -29,3 +29,9 @@ Hanya email yang terdaftar di sheet **Users** (atau tab Master) yang bisa masuk:
 `config.js` aman dipublikasikan (Client ID & URL API memang publik); akses dijaga verifikasi token di backend.
 
 Uji lokal: `python3 -m http.server 8080`
+
+## Peta & GPS
+Peta memakai Leaflet + OpenStreetMap (gratis, tanpa API key; tombol layer untuk Satelit).
+Superadmin merekam area dengan berjalan (Mulai → Selesai). Auditor terdeteksi otomatis di area lewat GPS;
+operator melihat area ditandai merah + notifikasi saat berada di lokasi temuan. GPS wajib HTTPS (GitHub Pages sudah HTTPS).
+Kolom `x`,`y` di sheet Findings = latitude,longitude. Data uji lama (denah) tidak kompatibel — hapus baris lama di sheet Areas/Findings.

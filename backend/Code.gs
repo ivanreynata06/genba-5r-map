@@ -106,7 +106,7 @@ function api(a, d, email) {
   d = d || {};
   const me = who(email), isS = me.role === 'superadmin';
   const need = (ok) => { if (!ok) throw new Error('Akses ditolak untuk peran: ' + me.role); };
-  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  const wr = a !== 'boot', lock = LockService.getScriptLock(); if (wr) lock.waitLock(20000);
   try {
     switch (a) {
       case 'boot':
@@ -130,11 +130,11 @@ function api(a, d, email) {
       case 'delUser': need(isS); del('Users', d.email); return 1;
       case 'saveFinding': {
         need(isS || me.role === 'auditor');
-        const id = 'T' + uid().toUpperCase().slice(0, 5);
-        put('Findings', { id, createdAt: new Date().toISOString(), floorId: d.floorId, areaId: d.areaId,
-          x: d.x, y: d.y, type: d.type, auditor: me.name, desc: d.desc,
-          photoId: up(d.photo, 'temuan'), status: 'open' });
-        return id;
+        const id = /^[A-Za-z0-9]{4,12}$/.test(d.id || '') ? d.id : 'T' + uid().toUpperCase().slice(0, 5);
+        const row = { id, createdAt: new Date().toISOString(), floorId: d.floorId, areaId: d.areaId,
+          x: d.x, y: d.y, type: d.type, auditor: me.name, desc: d.desc, photoId: up(d.photo, 'temuan'), status: 'open' };
+        put('Findings', row);
+        return row;   // x = latitude, y = longitude
       }
       case 'closeFinding': {
         need(isS || me.role === 'operator');
@@ -143,9 +143,9 @@ function api(a, d, email) {
         f.status = 'closed'; f.closeNote = d.note; f.closedAt = new Date().toISOString(); f.closedBy = me.name;
         if (d.photo) f.closePhotoId = up(d.photo, 'closing');
         put('Findings', f);
-        return 1;
+        return f;
       }
     }
     throw new Error('Aksi tidak dikenal');
-  } finally { lock.releaseLock(); }
+  } finally { if (wr) lock.releaseLock(); }
 }

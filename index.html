@@ -37,7 +37,11 @@ nav div.on{color:var(--p);font-weight:700}nav span{display:block;font-size:20px}
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:99px;z-index:30;display:none}
 .photo{width:100%;border-radius:12px;max-height:280px;object-fit:cover}
 .tag{display:inline-block;background:#ecfeff;color:#0e7490;border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
-</style></head><body>
+.lmap{height:340px;border-radius:12px;border:1px solid var(--b);z-index:0}
+.ok{background:#dcfce7!important;color:#166534}
+.lt{background:#fff;border:0;box-shadow:0 1px 3px #0004;font-weight:700;font-size:11px;padding:1px 6px}
+.leaflet-container{font:inherit}
+</style><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script></head><body>
 <header><div><b>Genba 5R Map</b><small id="who"></small></div><div id="hr"></div></header>
 <main id="app"><div class="card">Memuat…</div></main>
 <nav id="nav"></nav><div id="modal" onclick="if(event.target==this)closeM()"><div id="mc"></div></div>
@@ -45,121 +49,160 @@ nav div.on{color:var(--p);font-weight:700}nav span{display:block;font-size:20px}
 <script>
 const F0=new URLSearchParams(location.search).get("f")||"", URL0=location.origin+location.pathname;
 const $=s=>document.querySelector(s),E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const IMG=(id,w)=>id?`https://drive.google.com/thumbnail?id=${id}&sz=w${w||1000}`:'';
-const TK='gt_'+String(CFG.GOOGLE_CLIENT_ID).slice(0,14);function logout(){sessionStorage.removeItem(TK);login()}
-const api=async(a,d)=>{const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a,d,token:sessionStorage.getItem(TK)})}).catch(()=>{throw new Error('Gagal terhubung ke server. Cek API_URL di config.js dan deploy Apps Script (Who has access = Anyone).')});
-  let j;try{j=await r.json()}catch(e){throw new Error('Server tidak membalas JSON. Pastikan deploy: Execute as Me, Who has access = Anyone (bukan "Anyone with Google account"), dan API_URL berakhiran /exec.')}
-
+const IMG=(id,w)=>!id?'':String(id).startsWith('data:')?id:`https://drive.google.com/thumbnail?id=${id}&sz=w${w||1000}`;
+const TK='gt_'+String(CFG.GOOGLE_CLIENT_ID).slice(0,14);function logout(){sessionStorage.removeItem(TK);localStorage.removeItem('bc'+TK);login()}
+const api=async(a,d)=>{const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a,d,token:sessionStorage.getItem(TK)})}).catch(()=>{throw new Error('Gagal terhubung ke server. Cek API_URL & deploy Apps Script (Anyone).')});
+  let j;try{j=await r.json()}catch(e){throw new Error('Server tidak membalas JSON. Cek deploy Apps Script.')}
   if(!j.ok){const m=j.error.replace('AUTH: ','');if(/^AUTH/.test(j.error)){sessionStorage.removeItem(TK);login(m)}throw new Error(m)}return j.data};
-let S={tab:'find',flt:'open',ff:'',g:{},f:{},m:{pts:[],color:'#0ea5a4'}};
-const toast=t=>{const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2600)};
+const rid=()=>Math.random().toString(36).slice(2,10),R2=Math.PI/180;
+let S={tab:'find',flt:'open',ff:'',g:{},m:{st:'idle',pts:[],color:'#0ea5a4'},pos:null,nt:{}};
+const toast=(t,ms)=>{const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(S.tt);S.tt=setTimeout(()=>e.style.display='none',ms||2600)};
 const busy=v=>$('#busy').style.display=v?'flex':'none';
-const openM=h=>{$('#mc').innerHTML=h;$('#modal').style.display='flex'};const closeM=()=>$('#modal').style.display='none';
+const openM=h=>{$('#mc').innerHTML=h;$('#modal').style.display='flex'};
+const killMap=()=>{if(S.map){S.map.remove();S.map=null;S.lm=null;S.dl=null;S.al=null}};
+const closeM=()=>{$('#modal').style.display='none';S.cur=null;killMap();if(S.tab=='genba')gBind();if(S.tab=='master')mBind()};
 const role=()=>S.me.role,isS=()=>role()=='superadmin',canA=()=>isS()||role()=='auditor',canC=()=>isS()||role()=='operator';
 const fl=id=>S.floors.find(f=>f.id==id),ar=id=>S.areas.find(a=>a.id==id);
-const pts=a=>{try{return JSON.parse(a.points)||[]}catch(e){return[]}};
+const pts=a=>{try{return JSON.parse(a.points).filter(q=>Math.abs(q[0])>1)}catch(e){return[]}};
+const mid=a=>{const p=pts(a);return p.length?p[Math.floor(p.length/2)]:null};
+const items=a=>String(a.items||'').split('\n').filter(Boolean).map(i=>`<span class="tag">${E(i)}</span>`).join('')||'<span class="muted">Belum diisi</span>';
 const fmt=d=>d?new Date(d).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'';
+const cacheSave=()=>{try{localStorage.setItem('bc'+TK,JSON.stringify({me:S.me,floors:S.floors,areas:S.areas,findings:S.findings,users:S.users}))}catch(e){}};
 async function run(fn){busy(1);try{await fn()}catch(e){toast(e.message||'Terjadi kesalahan')}busy(0)}
-async function load(){const r=await api('boot');Object.assign(S,r);$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="logout()">Keluar</button>';render();
-  if(F0&&!S.opened){S.opened=1;if(S.findings.find(x=>x.id==F0))detail(F0)}}
-function shrink(file,max){return new Promise(ok=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');
-  c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok({data:c.toDataURL('image/jpeg',.72),ratio:i.height/i.width})};i.src=r.result};r.readAsDataURL(file)})}
+function bg(fn,ok){toast('Menyimpan…');fn().then(()=>toast(ok||'Tersimpan ✅')).catch(e=>{toast(e.message||'Gagal menyimpan');load().catch(()=>0)})}
+function shrink(file,max){return new Promise(ok=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',.7))};i.src=r.result};r.readAsDataURL(file)})}
 
-/* ---------- MAP ---------- */
-function mapHtml(f,o={}){
-  if(!f)return'<div class="muted">Denah belum tersedia</div>';
-  const R=f.ratio*1000;let s=`<svg class="map" viewBox="0 0 1000 ${R}">`+(f.fileId?`<image href="${IMG(f.fileId,1600)}" width="1000" height="${R}"/>`:`<rect width="1000" height="${R}" fill="#eef2f6"/>`);
-  const line=(p,c,w,op,dash)=>`<polyline points="${p.map(q=>q[0]*1000+','+q[1]*R)}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}" ${dash?'stroke-dasharray="14 12"':''}/>`;
-  S.areas.filter(a=>a.floorId==f.id&&a.id!=o.skip).forEach(a=>{const p=pts(a);if(!p.length)return;const on=a.id==o.hl,c=a.color||'#0ea5a4';
-    s+=line(p,c,on?18:10,o.hl&&!on?.3:.8);if(on||!o.hl)s+=`<text x="${p[0][0]*1000}" y="${p[0][1]*R-16}" font-size="22" font-weight="700" fill="#0f172a" stroke="#fff" stroke-width="5" paint-order="stroke">${E(a.name)}</text>`});
-  if(o.draft&&o.draft.length){s+=line(o.draft,o.color||'#0ea5a4',12,.95,1);o.draft.forEach((q,i)=>{const c=i==0?'#16a34a':i==o.draft.length-1?'#dc2626':'#fff';
-    s+=`<circle cx="${q[0]*1000}" cy="${q[1]*R}" r="${i==0||i==o.draft.length-1?15:9}" fill="${c}" stroke="#0f172a" stroke-width="3"/>`})}
-  if(o.pin)s+=`<circle cx="${o.pin[0]*1000}" cy="${o.pin[1]*R}" r="26" fill="#dc262633"/><circle cx="${o.pin[0]*1000}" cy="${o.pin[1]*R}" r="13" fill="#dc2626" stroke="#fff" stroke-width="5"/>`;
-  return `<div class="mw"><div class="zb"><button onclick="zoom(1,this)">+</button><button onclick="zoom(-1,this)">−</button></div><div class="mb">${s}</svg></div></div>`}
-function zoom(d,b){const v=b.closest('.mw').querySelector('svg');const w=(parseFloat(v.dataset.z||100)+d*50);v.dataset.z=Math.max(100,Math.min(400,w));v.style.width=v.dataset.z+'%'}
-function tap(box,f,cb){const v=$(box+' svg');if(!v)return;v.onclick=e=>{const p=v.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const q=p.matrixTransform(v.getScreenCTM().inverse());
-  cb(Math.max(0,Math.min(1,q.x/1000)),Math.max(0,Math.min(1,q.y/(f.ratio*1000))))}}
-const mid=a=>{const p=pts(a);return p.length?p[Math.floor(p.length/2)]:[.5,.5]};
+/* ---------- GEO ---------- */
+const dm=(a,b)=>Math.hypot((b[1]-a[1])*Math.cos((a[0]+b[0])/2*R2),b[0]-a[0])*R2*6371000;
+function dPath(p,q){if(!q.length)return 1e9;if(q.length==1)return dm(p,q[0]);let m=1e9;for(let i=0;i<q.length-1;i++){const a=q[i],b=q[i+1],k=Math.cos(a[0]*R2),bx=(b[1]-a[1])*k,by=b[0]-a[0],px=(p[1]-a[1])*k,py=p[0]-a[0],L=bx*bx+by*by,t=L?Math.max(0,Math.min(1,(px*bx+py*by)/L)):0;m=Math.min(m,Math.hypot(px-t*bx,py-t*by)*R2*6371000)}return m}
+const thr=()=>Math.max(20,Math.min(60,S.pos?S.pos.acc:0));
+function buf(p,w){if(p.length<2)return[];const k=Math.cos(p[0][0]*R2),d=w/(R2*6371000),A=[],B=[];
+  p.forEach((c,i)=>{const a=p[Math.max(0,i-1)],b=p[Math.min(p.length-1,i+1)];let dx=(b[1]-a[1])*k,dy=b[0]-a[0];const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;A.push([c[0]+dx*d,c[1]-dy*d/k]);B.push([c[0]-dx*d,c[1]+dy*d/k])});return A.concat(B.reverse())}
+function detect(fid){if(!S.pos)return null;let b=null,bd=1e9;S.areas.filter(a=>a.floorId==fid).forEach(a=>{const d=dPath(S.pos.ll,pts(a));if(d<bd){bd=d;b=a}});return b&&bd<=thr()?b:null}
+function watch(){if(S.w||!navigator.geolocation)return;S.w=navigator.geolocation.watchPosition(p=>{S.pos={ll:[p.coords.latitude,p.coords.longitude],acc:p.coords.accuracy};onPos()},e=>toast('GPS: '+(e.code==1?'izin lokasi ditolak — aktifkan di browser':'sinyal tidak tersedia'),4000),{enableHighAccuracy:true,maximumAge:2000,timeout:20000})}
+function onPos(){liveDot();const m=S.m;
+  if(m.st=='rec'&&S.pos.acc<=40){const l=m.pts[m.pts.length-1];if(!l||dm(l,S.pos.ll)>=4){m.pts.push(S.pos.ll);}mDraw()}
+  gStat();nearUI();checkNear()}
+function checkNear(){if(!S.pos)return;S.findings.forEach(x=>{if(x.status!='open'||S.nt[x.id]||Math.abs(+x.x)<=1)return;const a=ar(x.areaId);
+  if(dm(S.pos.ll,[+x.x,+x.y])<=20||(a&&dPath(S.pos.ll,pts(a))<=Math.min(thr(),25))){S.nt[x.id]=1;navigator.vibrate&&navigator.vibrate([250,100,250]);toast(`📍 Anda di lokasi temuan ${x.id} · ${(fl(x.floorId)||{}).name||''} · ${(a||{}).name||''}`,7000)}})}
+
+/* ---------- MAP (Leaflet + OpenStreetMap) ---------- */
+function mk(id,c){killMap();const m=L.map(id).setView(c||(S.pos&&S.pos.ll)||[-6.2,106.82],18);
+  const o=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),
+  s=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Esri'});
+  o.addTo(m);L.control.layers({Peta:o,Satelit:s}).addTo(m);S.map=m;liveDot();return m}
+function liveDot(){if(!S.map||!S.pos)return;if(S.lm)S.lm.setLatLng(S.pos.ll);else S.lm=L.circleMarker(S.pos.ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(S.map)}
+function drawArea(g,a,o={}){const p=pts(a);if(!p.length)return;const c=o.red?'#dc2626':(a.color||'#0ea5a4');
+  if(p.length>1)L.polygon(buf(p,o.red?12:8),{color:c,weight:o.red?3:1,fillColor:c,fillOpacity:o.red?.45:o.dim?.1:.3,dashArray:o.red?'6 6':null}).addTo(g);
+  L.polyline(p,{color:c,weight:3,opacity:o.dim?.35:.95}).bindTooltip(E(a.name),{permanent:!o.dim,direction:'center',className:'lt'}).addTo(g)}
+
+/* ---------- LOAD ---------- */
+async function load(){apply(await api('boot'))}
+function apply(r){Object.assign(S,r);cacheSave();$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="logout()">Keluar</button>';
+  const busyEdit=$('#modal').style.display=='flex'||(S.tab=='master'&&S.m.st!='idle');if(!busyEdit)render();
+  if(F0&&!S.opened&&S.findings.find(x=>x.id==F0)){S.opened=1;detail(F0)}}
 
 /* ---------- RENDER ---------- */
-function render(){
-  const tabs=[['find','📍','Temuan']];if(canA())tabs.push(['genba','🚶','Genba']);if(isS())tabs.push(['master','🛠️','Master']);
+function render(){killMap();const tabs=[['find','📍','Temuan']];if(canA())tabs.push(['genba','🚶','Genba']);if(isS())tabs.push(['master','🛠️','Master']);
   $('#nav').innerHTML=tabs.map(t=>`<div class="${S.tab==t[0]?'on':''}" onclick="S.tab='${t[0]}';render()"><span>${t[1]}</span>${t[2]}</div>`).join('');
   $('#app').innerHTML=S.tab=='find'?vFind():S.tab=='genba'?vGenba():vMaster();
-  if(S.tab=='genba')gBind();if(S.tab=='master')mBind()}
-
-function vFind(){
-  const L=S.findings.filter(x=>(S.flt=='all'||x.status==S.flt)&&(!S.ff||x.floorId==S.ff));
-  const n=s=>S.findings.filter(x=>x.status==s).length;
+  if(S.tab=='genba')gBind();if(S.tab=='master')mBind();if(S.tab=='find')watch()}
+function vFind(){const L=S.findings.filter(x=>(S.flt=='all'||x.status==S.flt)&&(!S.ff||x.floorId==S.ff)),n=s=>S.findings.filter(x=>x.status==s).length;
   return `<div class="chips">${[['open','Open ('+n('open')+')'],['closed','Closed ('+n('closed')+')'],['all','Semua']].map(c=>`<div class="chip ${S.flt==c[0]?'on':''}" onclick="S.flt='${c[0]}';render()">${c[1]}</div>`).join('')}</div>
   <div class="chips"><div class="chip ${!S.ff?'on':''}" onclick="S.ff='';render()">Semua lantai</div>${S.floors.map(f=>`<div class="chip ${S.ff==f.id?'on':''}" onclick="S.ff='${f.id}';render()">${E(f.name)}</div>`).join('')}</div>
   ${L.map(x=>{const a=ar(x.areaId),f=fl(x.floorId);return `<div class="card row" onclick="detail('${x.id}')"><img class="th" src="${IMG(x.photoId,300)}"><div class="grow"><div class="row"><b class="grow">${E(f?f.name:'-')} · ${E(a?a.name:'-')}</b><span class="bd ${x.status}">${x.status=='open'?'OPEN':'CLOSED'}</span></div>
   <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${E(x.desc)}</div><div class="muted">${E(x.type)} · ${E(x.auditor)} · ${fmt(x.createdAt)}</div></div></div>`}).join('')||'<div class="card muted">Tidak ada temuan.</div>'}`}
 
-function detail(id){
-  const x=S.findings.find(y=>y.id==id),f=fl(x.floorId),a=ar(x.areaId);
-  const items=a&&a.items?String(a.items).split('\n').filter(Boolean):[];
+/* ---------- DETAIL (operator) ---------- */
+function detail(id){const x=S.findings.find(y=>y.id==id),f=fl(x.floorId),a=ar(x.areaId),has=Math.abs(+x.x)>1;S.cur=id;S.cf={};watch();
   const msg=encodeURIComponent(`Temuan Genba 5R ${x.id}\n${f?f.name:''} - ${a?a.name:''}\n${x.desc}\nLokasi & detail: ${URL0}?f=${x.id}`);
-  S.cf={};
   openM(`<div class="row"><h3 class="grow">Temuan ${x.id}</h3><span class="bd ${x.status}">${x.status.toUpperCase()}</span><button class="btn s sm" onclick="closeM()">✕</button></div>
   <img class="photo" src="${IMG(x.photoId)}"><p><b>${E(f?f.name:'-')} · ${E(a?a.name:'-')}</b><br>${E(x.desc)}<br><span class="muted">${E(x.type)} · ${E(x.auditor)} · ${fmt(x.createdAt)}</span></p>
-  <h3>📍 Lokasi pada denah</h3>${mapHtml(f,{hl:x.areaId,pin:[+x.x,+x.y]})}
-  <div class="card" style="margin-top:10px"><b>Barang / objek di area ini</b><div>${items.map(i=>`<span class="tag">${E(i)}</span>`).join('')||'<span class="muted">Belum diisi</span>'}</div></div>
+  ${has?`<div id="near" class="card"></div><div id="dm" class="lmap"></div>
+  <a class="btn s" style="display:block;text-align:center;text-decoration:none;margin:8px 0" target="_blank" href="https://www.google.com/maps/dir/?api=1&destination=${x.x},${x.y}&travelmode=walking">Buka rute di Google Maps</a>`:'<div class="card muted">Temuan lama tanpa koordinat GPS.</div>'}
+  <div class="card"><b>Barang / objek di area ini</b><div>${a?items(a):''}</div></div>
   ${x.status=='closed'?`<div class="card"><b>✅ Closing</b> <span class="muted">oleh ${E(x.closedBy)} · ${fmt(x.closedAt)}</span><p>${E(x.closeNote)}</p>${x.closePhotoId?`<img class="photo" src="${IMG(x.closePhotoId)}">`:''}</div>`:
   canC()?`<div class="card"><h3>Closing temuan</h3><label>Catatan perbaikan</label><textarea id="cn" rows="3"></textarea><label>Foto sesudah (opsional)</label><input type="file" accept="image/*" capture="environment" onchange="cPhoto(this)"><button class="btn" onclick="doClose('${x.id}')">Closing sekarang</button></div>`:''}
-  <button class="btn w" onclick="window.open('https://wa.me/?text=${msg}')">Bagikan via WhatsApp</button>`)}
-async function cPhoto(i){if(i.files[0])S.cf.photo=(await shrink(i.files[0],1280)).data}
-function doClose(id){const n=$('#cn').value.trim();if(!n)return toast('Isi catatan closing');run(async()=>{await api('closeFinding',{id,note:n,photo:S.cf.photo});closeM();toast('Temuan di-closing ✅');await load()})}
+  <button class="btn w" onclick="window.open('https://wa.me/?text=${msg}')">Bagikan via WhatsApp</button>`);
+  if(has){const m=mk('dm',[+x.x,+x.y]),g=L.layerGroup().addTo(m);S.areas.filter(z=>z.floorId==x.floorId&&z.id!=x.areaId).forEach(z=>drawArea(g,z,{dim:1}));
+    if(a)drawArea(g,a,{red:1});L.circleMarker([+x.x,+x.y],{radius:11,color:'#fff',weight:4,fillColor:'#dc2626',fillOpacity:1}).addTo(g);
+    a&&pts(a).length>1?m.fitBounds(L.polygon(buf(pts(a),12)).getBounds().extend([+x.x,+x.y]),{maxZoom:19,padding:[20,20]}):m.setView([+x.x,+x.y],19);nearUI()}}
+function nearUI(){const x=S.findings.find(y=>y.id==S.cur),e=$('#near');if(!x||!e)return;if(!S.pos){e.textContent='📡 Mencari lokasi Anda… izinkan akses lokasi di browser.';return}
+  const d=dm(S.pos.ll,[+x.x,+x.y]),a=ar(x.areaId),on=d<=20||(a&&dPath(S.pos.ll,pts(a))<=Math.min(thr(),25));
+  e.className='card'+(on?' ok':'');e.innerHTML=(on?'✅ <b>Anda sudah di lokasi temuan</b>':'🚶 Menuju lokasi temuan')+` · jarak ±${Math.round(d)} m <span class="muted">(akurasi GPS ±${Math.round(S.pos.acc)} m)</span>`}
+async function cPhoto(i){if(i.files[0])S.cf.photo=await shrink(i.files[0],1024)}
+function doClose(id){const n=$('#cn').value.trim();if(!n)return toast('Isi catatan closing');const x=S.findings.find(y=>y.id==id),ph=S.cf.photo;
+  Object.assign(x,{status:'closed',closeNote:n,closedBy:S.me.name,closedAt:new Date().toISOString(),closePhotoId:ph||''});closeM();render();
+  bg(async()=>{Object.assign(x,await api('closeFinding',{id,note:n,photo:ph}));cacheSave()},'Closing tersimpan ✅')}
 
 /* ---------- GENBA (auditor) ---------- */
-function vGenba(){const g=S.g,as=S.areas.filter(a=>a.floorId==g.floorId),a=ar(g.areaId);
-  return `<div class="card"><h3>1. Pilih lantai</h3><div class="chips">${S.floors.map(f=>`<div class="chip ${g.floorId==f.id?'on':''}" onclick="S.g={floorId:'${f.id}'};render()">${E(f.name)}</div>`).join('')||'<span class="muted">Superadmin belum membuat denah.</span>'}</div>
-  ${g.floorId?`<h3>2. Pilih area yang di-genba</h3><div class="chips">${as.map(x=>`<div class="chip ${g.areaId==x.id?'on':''}" onclick="S.g.areaId='${x.id}';render()">${E(x.name)}</div>`).join('')||'<span class="muted">Belum ada area.</span>'}</div>`:''}</div>
-  ${a?`<div id="gm">${mapHtml(fl(g.floorId),{hl:a.id})}</div><div class="card" style="margin-top:10px"><b>Objek di area ${E(a.name)}</b><div>${String(a.items||'').split('\n').filter(Boolean).map(i=>`<span class="tag">${E(i)}</span>`).join('')}</div></div>
-  <button class="btn" onclick="newF()">＋ Catat temuan di area ini</button>`:''}`}
-function gBind(){}
-function newF(){const a=ar(S.g.areaId);S.f={pos:mid(a),type:'Internal',photo:null};
+function vGenba(){const g=S.g,as=S.areas.filter(a=>a.floorId==g.floorId);
+  return `<div class="card"><h3>1. Pilih lantai</h3><div class="chips">${S.floors.map(f=>`<div class="chip ${g.floorId==f.id?'on':''}" onclick="S.g={floorId:'${f.id}'};render()">${E(f.name)}</div>`).join('')||'<span class="muted">Superadmin belum membuat lantai.</span>'}</div>
+  ${g.floorId?`<h3>2. Lokasi Anda</h3><div id="gs" class="card ok"></div><div class="chips"><div class="chip ${!g.manual?'on':''}" onclick="S.g.manual=0;gStat()">Otomatis (GPS)</div>${as.map(x=>`<div class="chip ${g.manual&&g.areaId==x.id?'on':''}" onclick="S.g.manual=1;S.g.areaId='${x.id}';gDraw();gStat()">${E(x.name)}</div>`).join('')}</div>`:''}</div>
+  ${g.floorId?`<div id="gm" class="lmap"></div><div id="gi"></div><button class="btn" style="margin-top:10px" onclick="newF()">＋ Catat temuan di lokasi ini</button>`:''}`}
+function gBind(){if(!S.g.floorId||!$('#gm'))return;watch();mk('gm');gDraw();if(S.pos)S.map.setView(S.pos.ll,18);gStat()}
+function gDraw(){if(!S.map||S.tab!='genba')return;if(S.al)S.al.remove();S.al=L.layerGroup().addTo(S.map);S.areas.filter(a=>a.floorId==S.g.floorId).forEach(a=>drawArea(S.al,a,{dim:S.g.areaId&&a.id!=S.g.areaId}))}
+function gStat(){if(S.tab!='genba'||!S.g.floorId)return;if(!S.g.manual){const a=detect(S.g.floorId),id=a?a.id:'';if(id!=(S.g.areaId||'')){S.g.areaId=id;gDraw()}}
+  const a=ar(S.g.areaId),e=$('#gs');if(!e)return;e.className='card'+(a?' ok':'');
+  e.innerHTML=!S.pos?'📡 Mencari sinyal GPS… izinkan akses lokasi.':a?`📍 Anda di area <b>${E(a.name)}</b>${S.g.manual?' (manual)':''} <span class="muted">±${Math.round(S.pos.acc)} m</span>`:'❔ Belum terdeteksi di area manapun — pilih area manual di bawah.';
+  $('#gi').innerHTML=a?`<div class="card" style="margin-top:10px"><b>Objek di area ${E(a.name)}</b><div>${items(a)}</div></div>`:''}
+function newF(){const a=ar(S.g.areaId);if(!a)return toast('Area belum terdeteksi. Pilih area manual dulu.');
+  S.f={pos:S.pos?S.pos.ll:mid(a),type:'Internal',photo:null};
   openM(`<div class="row"><h3 class="grow">Temuan baru · ${E(a.name)}</h3><button class="btn s sm" onclick="closeM()">✕</button></div>
   <label>Foto temuan</label><input type="file" accept="image/*" capture="environment" onchange="fPhoto(this)"><img id="fp" class="photo" style="display:none">
   <label>Jenis genba</label><select onchange="S.f.type=this.value"><option>Internal</option><option>Eksternal</option></select>
   <label>Deskripsi temuan</label><textarea rows="3" oninput="S.f.desc=this.value" placeholder="Contoh: Kabel berserakan di dekat mesin"></textarea>
-  <label>Ketuk denah untuk menandai posisi tepat foto diambil</label><div id="fm">${mapHtml(fl(S.g.floorId),{hl:a.id,pin:S.f.pos})}</div><br>
-  <button class="btn" onclick="saveF()">Simpan temuan</button>`);tap('#fm',fl(S.g.floorId),(x,y)=>{S.f.pos=[x,y];$('#fm').innerHTML=mapHtml(fl(S.g.floorId),{hl:S.g.areaId,pin:S.f.pos});tap('#fm',fl(S.g.floorId),arguments.callee)})}
-async function fPhoto(i){if(!i.files[0])return;S.f.photo=(await shrink(i.files[0],1280)).data;const p=$('#fp');p.src=S.f.photo;p.style.display='block'}
-function saveF(){const f=S.f;if(!f.photo||!f.desc)return toast('Foto & deskripsi wajib diisi');
-  run(async()=>{const id=await api('saveFinding',{floorId:S.g.floorId,areaId:S.g.areaId,x:f.pos[0],y:f.pos[1],type:f.type,desc:f.desc,photo:f.photo});closeM();toast('Tersimpan: '+id);await load()})}
+  <label>Posisi temuan (otomatis dari GPS — ketuk peta untuk koreksi)</label><div id="fm" class="lmap" style="height:230px"></div><br><button class="btn" onclick="saveF()">Simpan temuan</button>`);
+  const m=mk('fm',S.f.pos),g=L.layerGroup().addTo(m);drawArea(g,a,{});const pin=L.circleMarker(S.f.pos,{radius:11,color:'#fff',weight:4,fillColor:'#dc2626',fillOpacity:1}).addTo(m);
+  m.on('click',e=>{S.f.pos=[e.latlng.lat,e.latlng.lng];pin.setLatLng(e.latlng)})}
+async function fPhoto(i){if(!i.files[0])return;S.f.photo=await shrink(i.files[0],1024);const p=$('#fp');p.src=S.f.photo;p.style.display='block'}
+function saveF(){const f=S.f,g=S.g;if(!f.photo||!f.desc)return toast('Foto & deskripsi wajib diisi');
+  const x={id:'T'+rid().slice(0,5).toUpperCase(),createdAt:new Date().toISOString(),floorId:g.floorId,areaId:g.areaId,x:f.pos[0],y:f.pos[1],type:f.type,auditor:S.me.name,desc:f.desc,photoId:f.photo,status:'open'};
+  S.findings.unshift(x);closeM();
+  bg(async()=>{Object.assign(x,await api('saveFinding',{id:x.id,floorId:x.floorId,areaId:x.areaId,x:x.x,y:x.y,type:x.type,desc:x.desc,photo:f.photo}));cacheSave()},'Temuan tersimpan ✅')}
 
 /* ---------- MASTER (superadmin) ---------- */
-function vMaster(){const m=S.m,f=fl(m.floorId),as=S.areas.filter(a=>a.floorId==m.floorId);
-  return `<div class="card"><h3>Denah lantai</h3><div class="chips">${S.floors.map(x=>`<div class="chip ${m.floorId==x.id?'on':''}" onclick="S.m={pts:[],color:'#0ea5a4',floorId:'${x.id}'};render()">${E(x.name)}</div>`).join('')}</div>
-  <div class="row"><input id="fn" placeholder="Nama lantai (mis. Lantai 1)" class="grow"><input id="ff" type="file" accept="image/*" class="grow"></div>
-  <div class="row"><button class="btn sm" onclick="addFloor()">${f?'Simpan / ganti denah':'Tambah lantai'}</button>${f?`<button class="btn d sm" onclick="delFloor()">Hapus lantai</button>`:''}</div>
-  <p class="muted">Upload gambar layout/denah (foto atau screenshot). Bisa diganti kapan saja.</p></div>
-  ${f?`<div class="card"><h3>Rekam jalur area: ${E(f.name)}</h3><p class="muted">Ketuk denah sesuai urutan Anda berjalan: <b style="color:#16a34a">titik hijau = mulai</b>, <b style="color:#dc2626">merah = selesai</b>.</p>
-  <div id="mm"></div><div class="row" style="margin:8px 0"><button class="btn s sm" onclick="S.m.pts.pop();mDraw()">↩ Undo</button><button class="btn s sm" onclick="S.m.pts=[];mDraw()">Kosongkan</button><span id="pc" class="muted"></span></div>
-  <label>Nama area</label><input id="an" value="${E(m.name||'')}" oninput="S.m.name=this.value"><label>Barang / objek di area (satu per baris)</label><textarea id="ai" rows="4" oninput="S.m.items=this.value">${E(m.items||'')}</textarea>
-  <label>Warna jalur</label><input type="color" value="${m.color}" oninput="S.m.color=this.value;mDraw()" style="height:42px">
-  <div class="row"><button class="btn" onclick="saveArea()">${m.id?'Update area':'Simpan area'}</button>${m.id?`<button class="btn d" style="width:auto" onclick="delArea()">Hapus</button>`:''}</div></div>
+const M0=fid=>({floorId:fid,st:'idle',pts:[],color:'#0ea5a4'});
+function vMaster(){const m=S.m,as=S.areas.filter(a=>a.floorId==m.floorId);
+  return `<div class="card"><h3>Lantai</h3><div class="chips">${S.floors.map(x=>`<div class="chip ${m.floorId==x.id?'on':''}" onclick="S.m=M0('${x.id}');render()">${E(x.name)}</div>`).join('')}</div>
+  <div class="row"><input id="fn" placeholder="Nama lantai (mis. Lantai 1)" class="grow"><button class="btn sm" onclick="addFloor()">Tambah</button></div>${m.floorId?'<button class="btn d sm" onclick="delFloor()">Hapus lantai terpilih</button>':''}</div>
+  ${m.floorId?`<div class="card"><h3>Rekam area dengan berjalan</h3><p class="muted">Berdiri di titik awal → tekan <b>Mulai</b> → berjalan menyusuri area → tekan <b>Selesai</b> di titik akhir. Di dalam gedung GPS bisa melenceng; Anda juga bisa mengetuk peta untuk menambah/menggeser titik.</p>
+  <div id="mm" class="lmap"></div><div id="pc" class="muted" style="margin:6px 0"></div>
+  <div class="row">${m.st=='rec'?'<button class="btn d" onclick="mStop()">⏹ Selesai</button>':'<button class="btn" onclick="mStart()">▶ Mulai</button>'}<button class="btn s" style="width:auto" onclick="S.m=M0(S.m.floorId);render()">Ulang</button></div>
+  ${m.st=='done'?`<div style="margin-top:10px"><label>Nama area</label><input value="${E(m.name||'')}" oninput="S.m.name=this.value"><label>Barang / objek di area (satu per baris)</label><textarea rows="4" oninput="S.m.items=this.value">${E(m.items||'')}</textarea>
+  <label>Warna</label><input type="color" value="${m.color}" oninput="S.m.color=this.value;mDraw()" style="height:42px"><div class="row"><button class="btn" onclick="saveArea()">${m.id?'Update area':'Simpan area'}</button>${m.id?`<button class="btn d" style="width:auto" onclick="delArea()">Hapus</button>`:''}</div></div>`:''}</div>
   <div class="card"><h3>Area tersimpan (${as.length})</h3>${as.map(a=>`<div class="row" style="padding:6px 0;border-bottom:1px solid var(--b)" onclick="editArea('${a.id}')"><i style="width:14px;height:14px;border-radius:4px;background:${a.color}"></i><b class="grow">${E(a.name)}</b><span class="muted">Edit ›</span></div>`).join('')||'<span class="muted">Belum ada.</span>'}</div>`:''}
-  <div class="card"><h3>Pengguna & peran</h3>${S.users.map(u=>`<div class="row" style="padding:4px 0"><div class="grow">${E(u.name)}<div class="muted">${E(u.email)} · ${E(u.role)}</div></div><button class="btn s sm" onclick="run(async()=>{await api('delUser',{email:'${E(u.email)}'});load()})">Hapus</button></div>`).join('')}
-  <input id="ue" placeholder="Email Google"><input id="un" placeholder="Nama"><select id="ur"><option value="auditor">auditor</option><option value="operator">operator</option><option value="superadmin">superadmin</option></select>
+  <div class="card"><h3>Pengguna & peran</h3>${S.users.map(u=>`<div class="row" style="padding:4px 0"><div class="grow">${E(u.name)}<div class="muted">${E(u.email)} · ${E(u.role)}</div></div><button class="btn s sm" onclick="run(async()=>{await api('delUser',{email:'${E(u.email)}'});await load()})">Hapus</button></div>`).join('')}
+  <input id="ue" placeholder="Email Google" autocapitalize="none"><input id="un" placeholder="Nama"><select id="ur"><option value="auditor">auditor</option><option value="operator">operator</option><option value="superadmin">superadmin</option></select>
   <button class="btn sm" onclick="addUser()">Tambah / ubah pengguna</button><p class="muted">Hanya email yang terdaftar yang bisa masuk.</p></div>`}
-function mBind(){if(S.m.floorId)mDraw()}
-function mDraw(){const f=fl(S.m.floorId);$('#mm').innerHTML=mapHtml(f,{skip:S.m.id,draft:S.m.pts,color:S.m.color});$('#pc').textContent=S.m.pts.length+' titik';
-  tap('#mm',f,(x,y)=>{S.m.pts.push([+x.toFixed(4),+y.toFixed(4)]);mDraw()})}
-function editArea(id){const a=ar(id);S.m={floorId:a.floorId,id:a.id,name:a.name,items:a.items,color:a.color,pts:pts(a)};render();scrollTo(0,0)}
-async function addFloor(){const n=$('#fn').value.trim()||(fl(S.m.floorId)||{}).name,i=$('#ff').files[0];if(!n)return toast('Isi nama lantai');
-  run(async()=>{const im=i?await shrink(i,1800):{};await api('saveFloor',{id:S.m.floorId,name:n,image:im.data,ratio:im.ratio});toast('Tersimpan');await load()})}
-function delFloor(){if(confirm('Hapus lantai ini?'))run(async()=>{await api('delFloor',{id:S.m.floorId});S.m={pts:[],color:'#0ea5a4'};await load()})}
-function saveArea(){const m=S.m;if(!m.name||m.pts.length<2)return toast('Isi nama & minimal 2 titik jalur');
-  run(async()=>{await api('saveArea',{id:m.id,floorId:m.floorId,name:m.name,points:m.pts,items:m.items||'',color:m.color});S.m={floorId:m.floorId,pts:[],color:'#0ea5a4'};toast('Area tersimpan');await load()})}
-function delArea(){if(confirm('Hapus area ini?'))run(async()=>{await api('delArea',{id:S.m.id});S.m={floorId:S.m.floorId,pts:[],color:'#0ea5a4'};await load()})}
+function mBind(){if(!S.m.floorId||!$('#mm'))return;watch();const p=S.m.pts,m=mk('mm',p.length?p[0]:null),g=L.layerGroup().addTo(m);
+  S.areas.filter(a=>a.floorId==S.m.floorId&&a.id!=S.m.id).forEach(a=>drawArea(g,a,{dim:1}));
+  if(p.length>1)m.fitBounds(L.polyline(p).getBounds(),{maxZoom:19,padding:[30,30]});
+  m.on('click',e=>{if(S.m.st=='idle')return;S.m.pts.push([+e.latlng.lat.toFixed(6),+e.latlng.lng.toFixed(6)]);mDraw()});mDraw()}
+function mDraw(){if(!S.map)return;if(S.dl)S.dl.remove();const p=S.m.pts,g=L.layerGroup();
+  if(p.length)L.polyline(p,{color:S.m.color,weight:5,dashArray:'8 8'}).addTo(g);
+  p.forEach((q,i)=>L.circleMarker(q,{radius:i==0||i==p.length-1?9:4,color:'#0f172a',weight:2,fillColor:i==0?'#16a34a':i==p.length-1?'#dc2626':'#fff',fillOpacity:1}).addTo(g));
+  g.addTo(S.map);S.dl=g;const e=$('#pc');if(e)e.textContent=p.length+' titik'+(S.pos?` · akurasi GPS ±${Math.round(S.pos.acc)} m`:' · menunggu GPS…')+(S.m.st=='rec'?' · merekam…':'')}
+function mStart(){if(!S.pos)return toast('Menunggu sinyal GPS… izinkan akses lokasi.');S.m.st='rec';S.m.pts=[S.pos.ll];render()}
+function mStop(){if(S.pos)S.m.pts.push(S.pos.ll);if(S.m.pts.length<2){S.m.st='idle';render();return toast('Jalur terlalu pendek, ulangi.')}S.m.st='done';render()}
+function editArea(id){const a=ar(id);S.m={floorId:a.floorId,id:a.id,name:a.name,items:a.items,color:a.color,pts:pts(a),st:'done'};render();scrollTo(0,0)}
+function saveArea(){const m=S.m;if(!m.name||m.pts.length<2)return toast('Isi nama area dan rekam jalurnya');
+  const a={id:m.id||rid(),floorId:m.floorId,name:m.name,points:JSON.stringify(m.pts),items:m.items||'',color:m.color},i=S.areas.findIndex(z=>z.id==a.id);
+  i<0?S.areas.push(a):S.areas[i]=a;S.m=M0(m.floorId);render();
+  bg(async()=>{await api('saveArea',{id:a.id,floorId:a.floorId,name:a.name,points:m.pts,items:a.items,color:a.color});cacheSave()},'Area tersimpan ✅')}
+function delArea(){if(!confirm('Hapus area ini?'))return;const id=S.m.id;S.areas=S.areas.filter(a=>a.id!=id);S.m=M0(S.m.floorId);render();bg(async()=>{await api('delArea',{id});cacheSave()},'Area dihapus')}
+function addFloor(){const n=$('#fn').value.trim();if(!n)return toast('Isi nama lantai');const f={id:rid(),name:n,fileId:'',ratio:''};S.floors.push(f);S.m=M0(f.id);render();bg(async()=>{await api('saveFloor',{id:f.id,name:n});cacheSave()},'Lantai ditambahkan ✅')}
+function delFloor(){if(!confirm('Hapus lantai ini beserta areanya?'))return;const id=S.m.floorId;S.floors=S.floors.filter(f=>f.id!=id);S.areas.filter(a=>a.floorId==id).forEach(a=>api('delArea',{id:a.id}).catch(()=>0));S.m=M0('');render();bg(async()=>{await api('delFloor',{id});cacheSave()},'Lantai dihapus')}
 function addUser(){const e=$('#ue').value.trim();if(!e)return toast('Isi email');run(async()=>{await api('saveUser',{email:e,name:$('#un').value||e,role:$('#ur').value});await load()})}
+
+/* ---------- AUTH / START ---------- */
 function login(msg){$('#nav').innerHTML='';$('#who').textContent='';$('#hr').innerHTML='';
   $('#app').innerHTML=`<div class="card" style="text-align:center;padding:30px 16px"><h3>Masuk ke Genba 5R Map</h3><p class="muted">${E(msg||'Gunakan akun Google yang sudah didaftarkan superadmin.')}</p><div id="gbtn" style="display:inline-block"></div></div>`;
   if(!(window.google&&google.accounts))return setTimeout(()=>login(msg),300);
   if(!window._gi){window._gi=1;google.accounts.id.initialize({client_id:CFG.GOOGLE_CLIENT_ID,callback:r=>{sessionStorage.setItem(TK,r.credential);start()}})}
   google.accounts.id.renderButton($('#gbtn'),{theme:'filled_blue',size:'large'})}
-function start(){if(/XXXX/.test(CFG.API_URL)||/ISI_CLIENT/.test(CFG.GOOGLE_CLIENT_ID))return login('config.js belum diisi (API_URL / GOOGLE_CLIENT_ID)');sessionStorage.getItem(TK)?run(load):login()}
+function start(){if(/XXXX/.test(CFG.API_URL)||/ISI_CLIENT/.test(CFG.GOOGLE_CLIENT_ID))return login('config.js belum diisi (API_URL / GOOGLE_CLIENT_ID)');
+  if(!sessionStorage.getItem(TK))return login();let c=null;try{c=JSON.parse(localStorage.getItem('bc'+TK))}catch(e){}
+  if(c&&c.me){apply(c);load().catch(e=>toast(e.message))}else run(load)}
 start();
 </script></body></html>
