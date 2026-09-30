@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Genba 5R Map</title><meta name="theme-color" content="#0f766e">
+<script src="config.js"></script><script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--p:#0f766e;--p2:#14b8a6;--bg:#f3f6f9;--c:#fff;--t:#0f172a;--m:#64748b;--b:#e2e8f0;--r:#dc2626;--g:#16a34a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--t);padding-bottom:76px}
+header{background:linear-gradient(135deg,var(--p),#0e4f6b);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center}
+header b{font-size:17px}header small{opacity:.8;display:block;font-size:11px}
+main{max-width:820px;margin:auto;padding:12px}
+.card{background:var(--c);border-radius:14px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px #0001}
+.row{display:flex;gap:10px;align-items:center}.grow{flex:1;min-width:0}
+h3{margin:4px 0 8px;font-size:15px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px}
+.chip{border:1px solid var(--b);background:#fff;border-radius:99px;padding:7px 14px;white-space:nowrap;font-size:13px;cursor:pointer}
+.chip.on{background:var(--p);color:#fff;border-color:var(--p)}
+button.btn{background:var(--p);color:#fff;border:0;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:600;cursor:pointer;width:100%}
+button.btn.s{background:#e2e8f0;color:var(--t)}button.btn.d{background:var(--r)}button.btn.w{background:#25d366}
+button.btn.sm{width:auto;padding:7px 12px;font-size:12px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--b);border-radius:10px;font:inherit;margin:4px 0 8px;background:#fff}
+label{font-size:12px;color:var(--m);font-weight:600}
+.th{width:64px;height:64px;border-radius:10px;object-fit:cover;background:#e2e8f0}
+.bd{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px}
+.open{background:#fee2e2;color:var(--r)}.closed{background:#dcfce7;color:var(--g)}
+.muted{color:var(--m);font-size:12px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--b);display:flex;z-index:6;padding-bottom:env(safe-area-inset-bottom)}
+nav div{flex:1;text-align:center;padding:10px 0;font-size:11px;color:var(--m);cursor:pointer}
+nav div.on{color:var(--p);font-weight:700}nav span{display:block;font-size:20px}
+.mw{position:relative;border:1px solid var(--b);border-radius:12px;overflow:hidden;background:#fff}
+.mb{overflow:auto;max-height:55vh}.map{display:block;width:100%;touch-action:manipulation}
+.zb{position:absolute;right:8px;top:8px;z-index:2;display:flex;flex-direction:column;gap:4px}
+.zb button{width:34px;height:34px;border-radius:8px;border:1px solid var(--b);background:#fff;font-size:18px}
+#modal{position:fixed;inset:0;background:#0007;z-index:9;display:none;align-items:flex-end;justify-content:center}
+#modal>div{background:var(--bg);width:100%;max-width:820px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:14px}
+#busy{position:fixed;inset:0;background:#fff8;z-index:20;display:none;align-items:center;justify-content:center;font-weight:700;color:var(--p)}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:99px;z-index:30;display:none}
+.photo{width:100%;border-radius:12px;max-height:280px;object-fit:cover}
+.tag{display:inline-block;background:#ecfeff;color:#0e7490;border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
+</style></head><body>
+<header><div><b>Genba 5R Map</b><small id="who"></small></div><div id="hr"></div></header>
+<main id="app"><div class="card">Memuat…</div></main>
+<nav id="nav"></nav><div id="modal" onclick="if(event.target==this)closeM()"><div id="mc"></div></div>
+<div id="busy">Memproses…</div><div id="toast"></div>
+<script>
+const F0=new URLSearchParams(location.search).get("f")||"", URL0=location.origin+location.pathname;
+const $=s=>document.querySelector(s),E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const IMG=(id,w)=>id?`https://drive.google.com/thumbnail?id=${id}&sz=w${w||1000}`:'';
+const api=async(a,d)=>{const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a,d,token:sessionStorage.getItem('gt')})});const j=await r.json();
+  if(!j.ok){const m=j.error.replace('AUTH: ','');if(/^AUTH/.test(j.error)){sessionStorage.removeItem('gt');login(m)}throw new Error(m)}return j.data};
+let S={tab:'find',flt:'open',ff:'',g:{},f:{},m:{pts:[],color:'#0ea5a4'}};
+const toast=t=>{const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2600)};
+const busy=v=>$('#busy').style.display=v?'flex':'none';
+const openM=h=>{$('#mc').innerHTML=h;$('#modal').style.display='flex'};const closeM=()=>$('#modal').style.display='none';
+const role=()=>S.me.role,isS=()=>role()=='superadmin',canA=()=>isS()||role()=='auditor',canC=()=>isS()||role()=='operator';
+const fl=id=>S.floors.find(f=>f.id==id),ar=id=>S.areas.find(a=>a.id==id);
+const pts=a=>{try{return JSON.parse(a.points)||[]}catch(e){return[]}};
+const fmt=d=>d?new Date(d).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'';
+async function run(fn){busy(1);try{await fn()}catch(e){toast(e.message||'Terjadi kesalahan')}busy(0)}
+async function load(){const r=await api('boot');Object.assign(S,r);$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="sessionStorage.removeItem(\'gt\');login()">Keluar</button>';render();
+  if(F0&&!S.opened){S.opened=1;if(S.findings.find(x=>x.id==F0))detail(F0)}}
+function shrink(file,max){return new Promise(ok=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');
+  c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok({data:c.toDataURL('image/jpeg',.72),ratio:i.height/i.width})};i.src=r.result};r.readAsDataURL(file)})}
+
+/* ---------- MAP ---------- */
+function mapHtml(f,o={}){
+  if(!f)return'<div class="muted">Denah belum tersedia</div>';
+  const R=f.ratio*1000;let s=`<svg class="map" viewBox="0 0 1000 ${R}">`+(f.fileId?`<image href="${IMG(f.fileId,1600)}" width="1000" height="${R}"/>`:`<rect width="1000" height="${R}" fill="#eef2f6"/>`);
+  const line=(p,c,w,op,dash)=>`<polyline points="${p.map(q=>q[0]*1000+','+q[1]*R)}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}" ${dash?'stroke-dasharray="14 12"':''}/>`;
+  S.areas.filter(a=>a.floorId==f.id&&a.id!=o.skip).forEach(a=>{const p=pts(a);if(!p.length)return;const on=a.id==o.hl,c=a.color||'#0ea5a4';
+    s+=line(p,c,on?18:10,o.hl&&!on?.3:.8);if(on||!o.hl)s+=`<text x="${p[0][0]*1000}" y="${p[0][1]*R-16}" font-size="22" font-weight="700" fill="#0f172a" stroke="#fff" stroke-width="5" paint-order="stroke">${E(a.name)}</text>`});
+  if(o.draft&&o.draft.length){s+=line(o.draft,o.color||'#0ea5a4',12,.95,1);o.draft.forEach((q,i)=>{const c=i==0?'#16a34a':i==o.draft.length-1?'#dc2626':'#fff';
+    s+=`<circle cx="${q[0]*1000}" cy="${q[1]*R}" r="${i==0||i==o.draft.length-1?15:9}" fill="${c}" stroke="#0f172a" stroke-width="3"/>`})}
+  if(o.pin)s+=`<circle cx="${o.pin[0]*1000}" cy="${o.pin[1]*R}" r="26" fill="#dc262633"/><circle cx="${o.pin[0]*1000}" cy="${o.pin[1]*R}" r="13" fill="#dc2626" stroke="#fff" stroke-width="5"/>`;
+  return `<div class="mw"><div class="zb"><button onclick="zoom(1,this)">+</button><button onclick="zoom(-1,this)">−</button></div><div class="mb">${s}</svg></div></div>`}
+function zoom(d,b){const v=b.closest('.mw').querySelector('svg');const w=(parseFloat(v.dataset.z||100)+d*50);v.dataset.z=Math.max(100,Math.min(400,w));v.style.width=v.dataset.z+'%'}
+function tap(box,f,cb){const v=$(box+' svg');if(!v)return;v.onclick=e=>{const p=v.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const q=p.matrixTransform(v.getScreenCTM().inverse());
+  cb(Math.max(0,Math.min(1,q.x/1000)),Math.max(0,Math.min(1,q.y/(f.ratio*1000))))}}
+const mid=a=>{const p=pts(a);return p.length?p[Math.floor(p.length/2)]:[.5,.5]};
+
+/* ---------- RENDER ---------- */
+function render(){
+  const tabs=[['find','📍','Temuan']];if(canA())tabs.push(['genba','🚶','Genba']);if(isS())tabs.push(['master','🛠️','Master']);
+  $('#nav').innerHTML=tabs.map(t=>`<div class="${S.tab==t[0]?'on':''}" onclick="S.tab='${t[0]}';render()"><span>${t[1]}</span>${t[2]}</div>`).join('');
+  $('#app').innerHTML=S.tab=='find'?vFind():S.tab=='genba'?vGenba():vMaster();
+  if(S.tab=='genba')gBind();if(S.tab=='master')mBind()}
+
+function vFind(){
+  const L=S.findings.filter(x=>(S.flt=='all'||x.status==S.flt)&&(!S.ff||x.floorId==S.ff));
+  const n=s=>S.findings.filter(x=>x.status==s).length;
+  return `<div class="chips">${[['open','Open ('+n('open')+')'],['closed','Closed ('+n('closed')+')'],['all','Semua']].map(c=>`<div class="chip ${S.flt==c[0]?'on':''}" onclick="S.flt='${c[0]}';render()">${c[1]}</div>`).join('')}</div>
+  <div class="chips"><div class="chip ${!S.ff?'on':''}" onclick="S.ff='';render()">Semua lantai</div>${S.floors.map(f=>`<div class="chip ${S.ff==f.id?'on':''}" onclick="S.ff='${f.id}';render()">${E(f.name)}</div>`).join('')}</div>
+  ${L.map(x=>{const a=ar(x.areaId),f=fl(x.floorId);return `<div class="card row" onclick="detail('${x.id}')"><img class="th" src="${IMG(x.photoId,300)}"><div class="grow"><div class="row"><b class="grow">${E(f?f.name:'-')} · ${E(a?a.name:'-')}</b><span class="bd ${x.status}">${x.status=='open'?'OPEN':'CLOSED'}</span></div>
+  <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${E(x.desc)}</div><div class="muted">${E(x.type)} · ${E(x.auditor)} · ${fmt(x.createdAt)}</div></div></div>`}).join('')||'<div class="card muted">Tidak ada temuan.</div>'}`}
+
+function detail(id){
+  const x=S.findings.find(y=>y.id==id),f=fl(x.floorId),a=ar(x.areaId);
+  const items=a&&a.items?String(a.items).split('\n').filter(Boolean):[];
+  const msg=encodeURIComponent(`Temuan Genba 5R ${x.id}\n${f?f.name:''} - ${a?a.name:''}\n${x.desc}\nLokasi & detail: ${URL0}?f=${x.id}`);
+  S.cf={};
+  openM(`<div class="row"><h3 class="grow">Temuan ${x.id}</h3><span class="bd ${x.status}">${x.status.toUpperCase()}</span><button class="btn s sm" onclick="closeM()">✕</button></div>
+  <img class="photo" src="${IMG(x.photoId)}"><p><b>${E(f?f.name:'-')} · ${E(a?a.name:'-')}</b><br>${E(x.desc)}<br><span class="muted">${E(x.type)} · ${E(x.auditor)} · ${fmt(x.createdAt)}</span></p>
+  <h3>📍 Lokasi pada denah</h3>${mapHtml(f,{hl:x.areaId,pin:[+x.x,+x.y]})}
+  <div class="card" style="margin-top:10px"><b>Barang / objek di area ini</b><div>${items.map(i=>`<span class="tag">${E(i)}</span>`).join('')||'<span class="muted">Belum diisi</span>'}</div></div>
+  ${x.status=='closed'?`<div class="card"><b>✅ Closing</b> <span class="muted">oleh ${E(x.closedBy)} · ${fmt(x.closedAt)}</span><p>${E(x.closeNote)}</p>${x.closePhotoId?`<img class="photo" src="${IMG(x.closePhotoId)}">`:''}</div>`:
+  canC()?`<div class="card"><h3>Closing temuan</h3><label>Catatan perbaikan</label><textarea id="cn" rows="3"></textarea><label>Foto sesudah (opsional)</label><input type="file" accept="image/*" capture="environment" onchange="cPhoto(this)"><button class="btn" onclick="doClose('${x.id}')">Closing sekarang</button></div>`:''}
+  <button class="btn w" onclick="window.open('https://wa.me/?text=${msg}')">Bagikan via WhatsApp</button>`)}
+async function cPhoto(i){if(i.files[0])S.cf.photo=(await shrink(i.files[0],1280)).data}
+function doClose(id){const n=$('#cn').value.trim();if(!n)return toast('Isi catatan closing');run(async()=>{await api('closeFinding',{id,note:n,photo:S.cf.photo});closeM();toast('Temuan di-closing ✅');await load()})}
+
+/* ---------- GENBA (auditor) ---------- */
+function vGenba(){const g=S.g,as=S.areas.filter(a=>a.floorId==g.floorId),a=ar(g.areaId);
+  return `<div class="card"><h3>1. Pilih lantai</h3><div class="chips">${S.floors.map(f=>`<div class="chip ${g.floorId==f.id?'on':''}" onclick="S.g={floorId:'${f.id}'};render()">${E(f.name)}</div>`).join('')||'<span class="muted">Superadmin belum membuat denah.</span>'}</div>
+  ${g.floorId?`<h3>2. Pilih area yang di-genba</h3><div class="chips">${as.map(x=>`<div class="chip ${g.areaId==x.id?'on':''}" onclick="S.g.areaId='${x.id}';render()">${E(x.name)}</div>`).join('')||'<span class="muted">Belum ada area.</span>'}</div>`:''}</div>
+  ${a?`<div id="gm">${mapHtml(fl(g.floorId),{hl:a.id})}</div><div class="card" style="margin-top:10px"><b>Objek di area ${E(a.name)}</b><div>${String(a.items||'').split('\n').filter(Boolean).map(i=>`<span class="tag">${E(i)}</span>`).join('')}</div></div>
+  <button class="btn" onclick="newF()">＋ Catat temuan di area ini</button>`:''}`}
+function gBind(){}
+function newF(){const a=ar(S.g.areaId);S.f={pos:mid(a),type:'Internal',photo:null};
+  openM(`<div class="row"><h3 class="grow">Temuan baru · ${E(a.name)}</h3><button class="btn s sm" onclick="closeM()">✕</button></div>
+  <label>Foto temuan</label><input type="file" accept="image/*" capture="environment" onchange="fPhoto(this)"><img id="fp" class="photo" style="display:none">
+  <label>Jenis genba</label><select onchange="S.f.type=this.value"><option>Internal</option><option>Eksternal</option></select>
+  <label>Deskripsi temuan</label><textarea rows="3" oninput="S.f.desc=this.value" placeholder="Contoh: Kabel berserakan di dekat mesin"></textarea>
+  <label>Ketuk denah untuk menandai posisi tepat foto diambil</label><div id="fm">${mapHtml(fl(S.g.floorId),{hl:a.id,pin:S.f.pos})}</div><br>
+  <button class="btn" onclick="saveF()">Simpan temuan</button>`);tap('#fm',fl(S.g.floorId),(x,y)=>{S.f.pos=[x,y];$('#fm').innerHTML=mapHtml(fl(S.g.floorId),{hl:S.g.areaId,pin:S.f.pos});tap('#fm',fl(S.g.floorId),arguments.callee)})}
+async function fPhoto(i){if(!i.files[0])return;S.f.photo=(await shrink(i.files[0],1280)).data;const p=$('#fp');p.src=S.f.photo;p.style.display='block'}
+function saveF(){const f=S.f;if(!f.photo||!f.desc)return toast('Foto & deskripsi wajib diisi');
+  run(async()=>{const id=await api('saveFinding',{floorId:S.g.floorId,areaId:S.g.areaId,x:f.pos[0],y:f.pos[1],type:f.type,desc:f.desc,photo:f.photo});closeM();toast('Tersimpan: '+id);await load()})}
+
+/* ---------- MASTER (superadmin) ---------- */
+function vMaster(){const m=S.m,f=fl(m.floorId),as=S.areas.filter(a=>a.floorId==m.floorId);
+  return `<div class="card"><h3>Denah lantai</h3><div class="chips">${S.floors.map(x=>`<div class="chip ${m.floorId==x.id?'on':''}" onclick="S.m={pts:[],color:'#0ea5a4',floorId:'${x.id}'};render()">${E(x.name)}</div>`).join('')}</div>
+  <div class="row"><input id="fn" placeholder="Nama lantai (mis. Lantai 1)" class="grow"><input id="ff" type="file" accept="image/*" class="grow"></div>
+  <div class="row"><button class="btn sm" onclick="addFloor()">${f?'Simpan / ganti denah':'Tambah lantai'}</button>${f?`<button class="btn d sm" onclick="delFloor()">Hapus lantai</button>`:''}</div>
+  <p class="muted">Upload gambar layout/denah (foto atau screenshot). Bisa diganti kapan saja.</p></div>
+  ${f?`<div class="card"><h3>Rekam jalur area: ${E(f.name)}</h3><p class="muted">Ketuk denah sesuai urutan Anda berjalan: <b style="color:#16a34a">titik hijau = mulai</b>, <b style="color:#dc2626">merah = selesai</b>.</p>
+  <div id="mm"></div><div class="row" style="margin:8px 0"><button class="btn s sm" onclick="S.m.pts.pop();mDraw()">↩ Undo</button><button class="btn s sm" onclick="S.m.pts=[];mDraw()">Kosongkan</button><span id="pc" class="muted"></span></div>
+  <label>Nama area</label><input id="an" value="${E(m.name||'')}" oninput="S.m.name=this.value"><label>Barang / objek di area (satu per baris)</label><textarea id="ai" rows="4" oninput="S.m.items=this.value">${E(m.items||'')}</textarea>
+  <label>Warna jalur</label><input type="color" value="${m.color}" oninput="S.m.color=this.value;mDraw()" style="height:42px">
+  <div class="row"><button class="btn" onclick="saveArea()">${m.id?'Update area':'Simpan area'}</button>${m.id?`<button class="btn d" style="width:auto" onclick="delArea()">Hapus</button>`:''}</div></div>
+  <div class="card"><h3>Area tersimpan (${as.length})</h3>${as.map(a=>`<div class="row" style="padding:6px 0;border-bottom:1px solid var(--b)" onclick="editArea('${a.id}')"><i style="width:14px;height:14px;border-radius:4px;background:${a.color}"></i><b class="grow">${E(a.name)}</b><span class="muted">Edit ›</span></div>`).join('')||'<span class="muted">Belum ada.</span>'}</div>`:''}
+  <div class="card"><h3>Pengguna & peran</h3>${S.users.map(u=>`<div class="row" style="padding:4px 0"><div class="grow">${E(u.name)}<div class="muted">${E(u.email)} · ${E(u.role)}</div></div><button class="btn s sm" onclick="run(async()=>{await api('delUser',{email:'${E(u.email)}'});load()})">Hapus</button></div>`).join('')}
+  <input id="ue" placeholder="Email Google"><input id="un" placeholder="Nama"><select id="ur"><option value="auditor">auditor</option><option value="operator">operator</option><option value="superadmin">superadmin</option></select>
+  <button class="btn sm" onclick="addUser()">Tambah / ubah pengguna</button><p class="muted">Hanya email yang terdaftar yang bisa masuk.</p></div>`}
+function mBind(){if(S.m.floorId)mDraw()}
+function mDraw(){const f=fl(S.m.floorId);$('#mm').innerHTML=mapHtml(f,{skip:S.m.id,draft:S.m.pts,color:S.m.color});$('#pc').textContent=S.m.pts.length+' titik';
+  tap('#mm',f,(x,y)=>{S.m.pts.push([+x.toFixed(4),+y.toFixed(4)]);mDraw()})}
+function editArea(id){const a=ar(id);S.m={floorId:a.floorId,id:a.id,name:a.name,items:a.items,color:a.color,pts:pts(a)};render();scrollTo(0,0)}
+async function addFloor(){const n=$('#fn').value.trim()||(fl(S.m.floorId)||{}).name,i=$('#ff').files[0];if(!n)return toast('Isi nama lantai');
+  run(async()=>{const im=i?await shrink(i,1800):{};await api('saveFloor',{id:S.m.floorId,name:n,image:im.data,ratio:im.ratio});toast('Tersimpan');await load()})}
+function delFloor(){if(confirm('Hapus lantai ini?'))run(async()=>{await api('delFloor',{id:S.m.floorId});S.m={pts:[],color:'#0ea5a4'};await load()})}
+function saveArea(){const m=S.m;if(!m.name||m.pts.length<2)return toast('Isi nama & minimal 2 titik jalur');
+  run(async()=>{await api('saveArea',{id:m.id,floorId:m.floorId,name:m.name,points:m.pts,items:m.items||'',color:m.color});S.m={floorId:m.floorId,pts:[],color:'#0ea5a4'};toast('Area tersimpan');await load()})}
+function delArea(){if(confirm('Hapus area ini?'))run(async()=>{await api('delArea',{id:S.m.id});S.m={floorId:S.m.floorId,pts:[],color:'#0ea5a4'};await load()})}
+function addUser(){const e=$('#ue').value.trim();if(!e)return toast('Isi email');run(async()=>{await api('saveUser',{email:e,name:$('#un').value||e,role:$('#ur').value});await load()})}
+function login(msg){$('#nav').innerHTML='';$('#who').textContent='';$('#hr').innerHTML='';
+  $('#app').innerHTML=`<div class="card" style="text-align:center;padding:30px 16px"><h3>Masuk ke Genba 5R Map</h3><p class="muted">${E(msg||'Gunakan akun Google yang sudah didaftarkan superadmin.')}</p><div id="gbtn" style="display:inline-block"></div></div>`;
+  if(!(window.google&&google.accounts))return setTimeout(()=>login(msg),300);
+  google.accounts.id.initialize({client_id:CFG.GOOGLE_CLIENT_ID,callback:r=>{sessionStorage.setItem('gt',r.credential);start()}});
+  google.accounts.id.renderButton($('#gbtn'),{theme:'filled_blue',size:'large'})}
+function start(){sessionStorage.getItem('gt')?run(load):login()}
+start();
+</script></body></html>
