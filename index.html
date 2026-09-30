@@ -41,11 +41,13 @@ nav div.on{color:var(--p);font-weight:700}nav span{display:block;font-size:20px}
 .ok{background:#dcfce7!important;color:#166534}
 .lt{background:#fff;border:0;box-shadow:0 1px 3px #0004;font-weight:700;font-size:11px;padding:1px 6px}
 .leaflet-container{font:inherit}
+#gps{position:fixed;top:62px;right:10px;z-index:7;background:#fff;border-radius:99px;padding:6px 12px;font-size:12px;font-weight:700;box-shadow:0 2px 8px #0003;cursor:pointer;display:none}
+#gps.g{color:#166534}#gps.y{color:#a16207}#gps.r{color:#b91c1c}
 </style><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script></head><body>
 <header><div><b>Genba 5R Map</b><small id="who"></small></div><div id="hr"></div></header>
 <main id="app"><div class="card">Memuat…</div></main>
 <nav id="nav"></nav><div id="modal" onclick="if(event.target==this)closeM()"><div id="mc"></div></div>
-<div id="busy">Memproses…</div><div id="toast"></div>
+<div id="gps" onclick="toggleFollow()"></div><div id="busy">Memproses…</div><div id="toast"></div>
 <script>
 const F0=new URLSearchParams(location.search).get("f")||"", URL0=location.origin+location.pathname;
 const $=s=>document.querySelector(s),E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -59,7 +61,7 @@ let S={tab:'find',flt:'open',ff:'',g:{},m:{st:'idle',pts:[],color:'#0ea5a4'},pos
 const toast=(t,ms)=>{const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(S.tt);S.tt=setTimeout(()=>e.style.display='none',ms||2600)};
 const busy=v=>$('#busy').style.display=v?'flex':'none';
 const openM=h=>{$('#mc').innerHTML=h;$('#modal').style.display='flex'};
-const killMap=()=>{if(S.map){S.map.remove();S.map=null;S.lm=null;S.dl=null;S.al=null}};
+const killMap=()=>{if(S.map){S.map.remove();S.map=null;S.lm=null;S.lc=null;S.dl=null;S.al=null}};
 const closeM=()=>{$('#modal').style.display='none';S.cur=null;killMap();if(S.tab=='genba')gBind();if(S.tab=='master')mBind()};
 const role=()=>S.me.role,isS=()=>role()=='superadmin',canA=()=>isS()||role()=='auditor',canC=()=>isS()||role()=='operator';
 const fl=id=>S.floors.find(f=>f.id==id),ar=id=>S.areas.find(a=>a.id==id);
@@ -79,9 +81,15 @@ const thr=()=>Math.max(20,Math.min(60,S.pos?S.pos.acc:0));
 function buf(p,w){if(p.length<2)return[];const k=Math.cos(p[0][0]*R2),d=w/(R2*6371000),A=[],B=[];
   p.forEach((c,i)=>{const a=p[Math.max(0,i-1)],b=p[Math.min(p.length-1,i+1)];let dx=(b[1]-a[1])*k,dy=b[0]-a[0];const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;A.push([c[0]+dx*d,c[1]-dy*d/k]);B.push([c[0]-dx*d,c[1]+dy*d/k])});return A.concat(B.reverse())}
 function detect(fid){if(!S.pos)return null;let b=null,bd=1e9;S.areas.filter(a=>a.floorId==fid).forEach(a=>{const d=dPath(S.pos.ll,pts(a));if(d<bd){bd=d;b=a}});return b&&bd<=thr()?b:null}
-function watch(){if(S.w||!navigator.geolocation)return;S.w=navigator.geolocation.watchPosition(p=>{S.pos={ll:[p.coords.latitude,p.coords.longitude],acc:p.coords.accuracy};onPos()},e=>toast('GPS: '+(e.code==1?'izin lokasi ditolak — aktifkan di browser':'sinyal tidak tersedia'),4000),{enableHighAccuracy:true,maximumAge:2000,timeout:20000})}
-function onPos(){liveDot();const m=S.m;
-  if(m.st=='rec'&&S.pos.acc<=40){const l=m.pts[m.pts.length-1];if(!l||dm(l,S.pos.ll)>=4){m.pts.push(S.pos.ll);}mDraw()}
+function watch(){if(S.w||!navigator.geolocation)return;S.w=navigator.geolocation.watchPosition(p=>{
+  const n=[p.coords.latitude,p.coords.longitude],a=p.coords.accuracy,o=S.pos;let ll=n;
+  if(o&&dm(o.ll,n)<3*Math.max(a,10)){const k=a<=10?.85:a<=25?.55:.35;ll=[o.ll[0]+(n[0]-o.ll[0])*k,o.ll[1]+(n[1]-o.ll[1])*k]}
+  S.pos={ll,acc:a};onPos()},e=>toast('GPS: '+(e.code==1?'izin lokasi ditolak — aktifkan di browser':'sinyal tidak tersedia'),4000),{enableHighAccuracy:true,maximumAge:0,timeout:30000})}
+function gpsUI(){const e=$('#gps');if(!e)return;if(!S.pos){e.style.display='block';e.className='y';e.textContent='📡 Mencari GPS…';return}
+  const a=S.pos.acc,q=a<=10?['g','Bagus']:a<=25?['y','Cukup']:['r','Lemah'];e.style.display='block';e.className=q[0];e.textContent=`📍 ±${Math.round(a)} m · ${q[1]} · ${S.follow?'Mengikuti':'Ikuti'}`}
+function toggleFollow(){S.follow=!S.follow;if(S.follow&&S.map&&S.pos)S.map.panTo(S.pos.ll);gpsUI()}
+function onPos(){liveDot();gpsUI();const m=S.m;
+  if(m.st=='rec'&&S.pos.acc<=25){const l=m.pts[m.pts.length-1];if(!l||dm(l,S.pos.ll)>=Math.max(4,S.pos.acc*.5)){m.pts.push(S.pos.ll)}mDraw()}
   gStat();nearUI();checkNear()}
 function checkNear(){if(!S.pos)return;S.findings.forEach(x=>{if(x.status!='open'||S.nt[x.id]||Math.abs(+x.x)<=1)return;const a=ar(x.areaId);
   if(dm(S.pos.ll,[+x.x,+x.y])<=20||(a&&dPath(S.pos.ll,pts(a))<=Math.min(thr(),25))){S.nt[x.id]=1;navigator.vibrate&&navigator.vibrate([250,100,250]);toast(`📍 Anda di lokasi temuan ${x.id} · ${(fl(x.floorId)||{}).name||''} · ${(a||{}).name||''}`,7000)}})}
@@ -90,15 +98,17 @@ function checkNear(){if(!S.pos)return;S.findings.forEach(x=>{if(x.status!='open'
 function mk(id,c){killMap();const m=L.map(id).setView(c||(S.pos&&S.pos.ll)||[-6.2,106.82],18);
   const o=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),
   s=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Esri'});
-  o.addTo(m);L.control.layers({Peta:o,Satelit:s}).addTo(m);S.map=m;liveDot();return m}
-function liveDot(){if(!S.map||!S.pos)return;if(S.lm)S.lm.setLatLng(S.pos.ll);else S.lm=L.circleMarker(S.pos.ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(S.map)}
+  o.addTo(m);L.control.layers({Peta:o,Satelit:s}).addTo(m);S.follow=(id=='mm'||id=='gm');m.on('dragstart',()=>{S.follow=false;gpsUI()});S.map=m;gpsUI();liveDot();return m}
+function liveDot(){if(!S.map||!S.pos)return;const ll=S.pos.ll;
+  if(S.lm){S.lm.setLatLng(ll);S.lc.setLatLng(ll).setRadius(S.pos.acc)}else{S.lc=L.circle(ll,{radius:S.pos.acc,color:'#2563eb',weight:1,fillColor:'#3b82f6',fillOpacity:.12}).addTo(S.map);S.lm=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(S.map)}
+  if(S.follow)S.map.panTo(ll,{animate:true,duration:.6,noMoveStart:true})}
 function drawArea(g,a,o={}){const p=pts(a);if(!p.length)return;const c=o.red?'#dc2626':(a.color||'#0ea5a4');
   if(p.length>1)L.polygon(buf(p,o.red?12:8),{color:c,weight:o.red?3:1,fillColor:c,fillOpacity:o.red?.45:o.dim?.1:.3,dashArray:o.red?'6 6':null}).addTo(g);
   L.polyline(p,{color:c,weight:3,opacity:o.dim?.35:.95}).bindTooltip(E(a.name),{permanent:!o.dim,direction:'center',className:'lt'}).addTo(g)}
 
 /* ---------- LOAD ---------- */
 async function load(){apply(await api('boot'))}
-function apply(r){Object.assign(S,r);cacheSave();$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="logout()">Keluar</button>';
+function apply(r){watch();Object.assign(S,r);cacheSave();$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="logout()">Keluar</button>';
   const busyEdit=$('#modal').style.display=='flex'||(S.tab=='master'&&S.m.st!='idle');if(!busyEdit)render();
   if(F0&&!S.opened&&S.findings.find(x=>x.id==F0)){S.opened=1;detail(F0)}}
 
@@ -183,7 +193,7 @@ function mDraw(){if(!S.map)return;if(S.dl)S.dl.remove();const p=S.m.pts,g=L.laye
   if(p.length)L.polyline(p,{color:S.m.color,weight:5,dashArray:'8 8'}).addTo(g);
   p.forEach((q,i)=>L.circleMarker(q,{radius:i==0||i==p.length-1?9:4,color:'#0f172a',weight:2,fillColor:i==0?'#16a34a':i==p.length-1?'#dc2626':'#fff',fillOpacity:1}).addTo(g));
   g.addTo(S.map);S.dl=g;const e=$('#pc');if(e)e.textContent=p.length+' titik'+(S.pos?` · akurasi GPS ±${Math.round(S.pos.acc)} m`:' · menunggu GPS…')+(S.m.st=='rec'?' · merekam…':'')}
-function mStart(){if(!S.pos)return toast('Menunggu sinyal GPS… izinkan akses lokasi.');S.m.st='rec';S.m.pts=[S.pos.ll];render()}
+function mStart(){if(!S.pos)return toast('Menunggu sinyal GPS… izinkan akses lokasi.');if(S.pos.acc>30&&!confirm('Akurasi GPS masih ±'+Math.round(S.pos.acc)+' m. Tunggu sampai ≤ 25 m agar jalur rapi. Tetap mulai sekarang?'))return;S.m.st='rec';S.m.pts=[S.pos.ll];render()}
 function mStop(){if(S.pos)S.m.pts.push(S.pos.ll);if(S.m.pts.length<2){S.m.st='idle';render();return toast('Jalur terlalu pendek, ulangi.')}S.m.st='done';render()}
 function editArea(id){const a=ar(id);S.m={floorId:a.floorId,id:a.id,name:a.name,items:a.items,color:a.color,pts:pts(a),st:'done'};render();scrollTo(0,0)}
 function saveArea(){const m=S.m;if(!m.name||m.pts.length<2)return toast('Isi nama area dan rekam jalurnya');
