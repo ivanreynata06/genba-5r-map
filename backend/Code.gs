@@ -74,9 +74,21 @@ function del(n, id) {
   for (let i = v.length - 1; i > 0; i--) if (String(v[i][0]) === String(id)) s.deleteRow(i + 1);
 }
 function who(email) {
-  const x = rows('Users').find(r => String(r.email).toLowerCase() === email);
+  const norm = v => String(v == null ? '' : v).trim().toLowerCase();
+  let x = rows('Users').find(r => norm(r.email || Object.values(r)[0]) === email);
+  // Pemilik script (akun yang men-deploy) otomatis terdaftar sebagai superadmin
+  if (!x && email === norm(Session.getEffectiveUser().getEmail())) {
+    x = { email: email, name: 'Superadmin', role: 'superadmin' }; put('Users', x);
+  }
   if (!x) throw new Error('AUTH: Email ' + email + ' belum terdaftar. Hubungi superadmin.');
-  return { email, name: x.name, role: x.role };
+  return { email: email, name: x.name || email, role: norm(x.role) };
+}
+
+/** Diagnosa: jalankan lalu lihat View > Logs untuk memastikan spreadsheet & isi sheet Users */
+function cekUsers() {
+  Logger.log('Spreadsheet : ' + SpreadsheetApp.getActive().getUrl());
+  Logger.log('Pemilik     : ' + Session.getEffectiveUser().getEmail());
+  Logger.log('Isi Users   : ' + JSON.stringify(sh('Users').getDataRange().getValues()));
 }
 function up(dataUrl, prefix) {
   const m = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
