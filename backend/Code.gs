@@ -26,8 +26,10 @@ function verify(t) {
   const r = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(t), { muteHttpExceptions: true });
   if (r.getResponseCode() != 200) throw new Error('AUTH: Sesi habis, silakan login ulang');
   const j = JSON.parse(r.getContentText());
-  if (j.aud !== CLIENT_ID.trim() || String(j.email_verified) !== 'true')
-    throw new Error('AUTH: Token tidak valid (Client ID di Code.gs tidak sama dengan config.js)');
+  if (j.aud !== CLIENT_ID.trim())
+    throw new Error('AUTH: Client ID tidak cocok. Token dari ' + String(j.aud).slice(0, 14) + '..., server mengharapkan ' +
+      CLIENT_ID.trim().slice(0, 14) + '... (ubah CLIENT_ID di Code.gs lalu Deploy > New version)');
+  if (String(j.email_verified) !== 'true') throw new Error('AUTH: Email Google belum terverifikasi');
   em = j.email.toLowerCase();
   cache.put(k, em, Math.max(1, Math.min(300, j.exp - Math.floor(Date.now() / 1000))));
   return em;

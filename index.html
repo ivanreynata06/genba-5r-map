@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Genba 5R Map</title><meta name="theme-color" content="#0f766e">
-<script src="config.js"></script><script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E📍%3C/text%3E%3C/svg%3E">
+<script>document.write('<script src="config.js?'+Date.now()+'"><\/script>')</script><script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{--p:#0f766e;--p2:#14b8a6;--bg:#f3f6f9;--c:#fff;--t:#0f172a;--m:#64748b;--b:#e2e8f0;--r:#dc2626;--g:#16a34a}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -45,8 +46,11 @@ nav div.on{color:var(--p);font-weight:700}nav span{display:block;font-size:20px}
 const F0=new URLSearchParams(location.search).get("f")||"", URL0=location.origin+location.pathname;
 const $=s=>document.querySelector(s),E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const IMG=(id,w)=>id?`https://drive.google.com/thumbnail?id=${id}&sz=w${w||1000}`:'';
-const api=async(a,d)=>{const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a,d,token:sessionStorage.getItem('gt')})});const j=await r.json();
-  if(!j.ok){const m=j.error.replace('AUTH: ','');if(/^AUTH/.test(j.error)){sessionStorage.removeItem('gt');login(m)}throw new Error(m)}return j.data};
+const TK='gt_'+String(CFG.GOOGLE_CLIENT_ID).slice(0,14);function logout(){sessionStorage.removeItem(TK);login()}
+const api=async(a,d)=>{const r=await fetch(CFG.API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a,d,token:sessionStorage.getItem(TK)})}).catch(()=>{throw new Error('Gagal terhubung ke server. Cek API_URL di config.js dan deploy Apps Script (Who has access = Anyone).')});
+  let j;try{j=await r.json()}catch(e){throw new Error('Server tidak membalas JSON. Pastikan deploy: Execute as Me, Who has access = Anyone (bukan "Anyone with Google account"), dan API_URL berakhiran /exec.')}
+
+  if(!j.ok){const m=j.error.replace('AUTH: ','');if(/^AUTH/.test(j.error)){sessionStorage.removeItem(TK);login(m)}throw new Error(m)}return j.data};
 let S={tab:'find',flt:'open',ff:'',g:{},f:{},m:{pts:[],color:'#0ea5a4'}};
 const toast=t=>{const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2600)};
 const busy=v=>$('#busy').style.display=v?'flex':'none';
@@ -56,7 +60,7 @@ const fl=id=>S.floors.find(f=>f.id==id),ar=id=>S.areas.find(a=>a.id==id);
 const pts=a=>{try{return JSON.parse(a.points)||[]}catch(e){return[]}};
 const fmt=d=>d?new Date(d).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'';
 async function run(fn){busy(1);try{await fn()}catch(e){toast(e.message||'Terjadi kesalahan')}busy(0)}
-async function load(){const r=await api('boot');Object.assign(S,r);$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="sessionStorage.removeItem(\'gt\');login()">Keluar</button>';render();
+async function load(){const r=await api('boot');Object.assign(S,r);$('#who').textContent=S.me.name+' · '+S.me.role;$('#hr').innerHTML='<button class="btn s sm" onclick="logout()">Keluar</button>';render();
   if(F0&&!S.opened){S.opened=1;if(S.findings.find(x=>x.id==F0))detail(F0)}}
 function shrink(file,max){return new Promise(ok=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');
   c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok({data:c.toDataURL('image/jpeg',.72),ratio:i.height/i.width})};i.src=r.result};r.readAsDataURL(file)})}
@@ -154,8 +158,8 @@ function addUser(){const e=$('#ue').value.trim();if(!e)return toast('Isi email')
 function login(msg){$('#nav').innerHTML='';$('#who').textContent='';$('#hr').innerHTML='';
   $('#app').innerHTML=`<div class="card" style="text-align:center;padding:30px 16px"><h3>Masuk ke Genba 5R Map</h3><p class="muted">${E(msg||'Gunakan akun Google yang sudah didaftarkan superadmin.')}</p><div id="gbtn" style="display:inline-block"></div></div>`;
   if(!(window.google&&google.accounts))return setTimeout(()=>login(msg),300);
-  google.accounts.id.initialize({client_id:CFG.GOOGLE_CLIENT_ID,callback:r=>{sessionStorage.setItem('gt',r.credential);start()}});
+  google.accounts.id.initialize({client_id:CFG.GOOGLE_CLIENT_ID,callback:r=>{sessionStorage.setItem(TK,r.credential);start()}});
   google.accounts.id.renderButton($('#gbtn'),{theme:'filled_blue',size:'large'})}
-function start(){sessionStorage.getItem('gt')?run(load):login()}
+function start(){if(/XXXX/.test(CFG.API_URL)||/ISI_CLIENT/.test(CFG.GOOGLE_CLIENT_ID))return login('config.js belum diisi (API_URL / GOOGLE_CLIENT_ID)');sessionStorage.getItem(TK)?run(load):login()}
 start();
 </script></body></html>
